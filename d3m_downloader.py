@@ -98,5 +98,5 @@ def download_dataset_from_type(types_doc, ds_cohort, dtype, output_dir,
                 print("Downloading {}".format(name))
                 download_dataset_from_name(name, os.path.join(output_dir, name))
                 downloaded += 1
-                if downloaded >= max_datasets:
+                if max_datasets is not None and downloaded >= max_datasets:
                     return
