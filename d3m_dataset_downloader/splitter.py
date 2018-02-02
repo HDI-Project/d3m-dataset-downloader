@@ -107,7 +107,7 @@ def get_dataset_split(full_dataset, dataset_name, label, problem, targets=False)
         for target_name in target_names:
             del ld_split[target_name]
 
-        dataset_split['tables']['learningData.csv'] = to_csv(ld_split)
+    dataset_split['tables']['learningData.csv'] = to_csv(ld_split)
 
     return split
 
