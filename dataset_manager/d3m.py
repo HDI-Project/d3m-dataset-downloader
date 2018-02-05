@@ -3,50 +3,38 @@ import time
 
 import requests
 from bs4 import BeautifulSoup
+from requests.adapters import HTTPAdapter
+from requests.packages.urllib3.util.retry import Retry
 
 
-class D3MScraper(object):
+class BaseScraper(object):
 
-    auth_ldap_url = 'https://api-token.datadrivendiscovery.org/auth/ldap'
-    auth_headers = {
-        'Content-Type': 'application/json'
+    PATH = {
+        'seed': 'seed_datasets_current/',
+        'll0': 'training_datasets/LL0/',
+        'll1': 'training_datasets/LL1/'
     }
+    DATASET_TYPES = dict()
 
-    base_urls = {
-        'seed': 'https://datadrivendiscovery.org/data/seed_datasets_current/',
-        'll0': 'https://datadrivendiscovery.org/data/training_datasets/LL0/',
-        'll1': 'https://datadrivendiscovery.org/data/training_datasets/LL1/'
-    }
+    STATUS_FORCELIST = (403, 404, 500, 502, 504)
+    RETRIES = 10
+    BACKOFF_FACTOR = 0.5
 
-    dataset_types = dict()
+    def get_session(self):
+        session = requests.Session()
+        retry = Retry(self.RETRIES, backoff_factor=self.BACKOFF_FACTOR,
+                      status_forcelist=self.STATUS_FORCELIST)
+        adapter = HTTPAdapter(max_retries=retry)
+        session.mount('http://', adapter)
+        session.mount('https://', adapter)
+        return session
 
-    @classmethod
-    def get_token(cls, username, password):
-        data = {
-            'username': username,
-            'password': password
-        }
-        r = requests.post(cls.auth_ldap_url,
-                          headers=cls.auth_headers,
-                          data=json.dumps(data))
-
-        try:
-            return r.json()['access_token']
-
-        except TypeError:
-            raise Exception("Invalid username or password")
-
-    def __init__(self, username, password, delay=0, skip_sublevels=False):
-        self.session = requests.session()
-        self.session.headers = {
-            'Authorization': self.get_token(username, password)
-        }
-        self.delay = delay
+    def __init__(self, skip_sublevels=False):
+        self.session = self.get_session()
         self.sublevels = ['tables/'] if skip_sublevels else []
 
     def get_url(self, url, raw=False):
         print("Getting URL {}".format(url))
-        time.sleep(self.delay)
         r = self.session.get(url)
         if raw:
             return r.content
@@ -56,14 +44,15 @@ class D3MScraper(object):
 
     @staticmethod
     def get_links(soup):
-        tds = soup.find_all('td', class_='display-name')
-        links = (td.find('a') for td in tds)
-        return [a.text for a in links if a.text != '../']
+        links = soup.find_all('a')
+        links = [a.text for a in links if '..' not in a.text]
+        return [link[:-1] if link[-1] == '/' else link for link in links]
 
     def get_datasets(self, dataset_type):
-        soup = self.get_url(self.base_urls[dataset_type])
+        url = self.BASE_URL + self.PATH[dataset_type]
+        soup = self.get_url(url)
         links = self.get_links(soup)
-        return [link[:-1] for link in links if link[-1] == '/']
+        return [link for link in links if '.' not in link]
 
     def get_sublevel(self, base_path, level, sublevels):
         data = dict()
@@ -71,27 +60,30 @@ class D3MScraper(object):
         if sublevels and level not in sublevels:
             return data
 
-        level_url = base_path + level
+        level_url = base_path + level + '/'
         soup = self.get_url(level_url)
 
         links = self.get_links(soup)
         for link in links:
-            if link[-1] == '/':
+            if '.' not in link:
                 # This is a link to a subfolder
-                data[link[:-1]] = self.get_sublevel(level_url, link, sublevels)
+                if link[-1] == '/':
+                    link = link[:-1]
+
+                data[link] = self.get_sublevel(level_url, link, sublevels)
             else:
                 data[link] = self.get_url(level_url + link, raw=True)
 
         return data
 
     def get_base_url(self, dataset_name):
-        if not self.dataset_types:
-            for dataset_type, url in self.base_urls.items():
+        if not self.DATASET_TYPES:
+            for dataset_type, path in self.PATH.items():
                 datasets = self.get_datasets(dataset_type)
                 for dataset in datasets:
-                    self.dataset_types[dataset] = url
+                    self.DATASET_TYPES[dataset] = self.BASE_URL + path
 
-        return self.dataset_types[dataset_name]
+        return self.DATASET_TYPES[dataset_name]
 
     def scrape_dataset(self, dataset):
         base_url = self.get_base_url(dataset) + dataset + '/'
@@ -104,24 +96,64 @@ class D3MScraper(object):
             sublevels.extend(root_links)
 
         return {
-            link[:-1]: self.get_sublevel(base_url, link, sublevels) for link in root_links
+            link: self.get_sublevel(base_url, link, sublevels) for link in root_links
         }
 
 
-class D3MManager(object):
+class D3MScraper(BaseScraper):
+
+    BASE_URL = 'https://datadrivendiscovery.org/data/'
+
+    def get_session(self, username, password):
+        session = requests.Session()
+        retry = Retry(self.RETRIES, backoff_factor=self.BACKOFF_FACTOR)
+        adapter = HTTPAdapter(max_retries=retry)
+        session.mount('http://', adapter)
+        session.mount('https://', adapter)
+        login_data = {
+            'username': username,
+            'password': password,
+            'target': '/data'
+        }
+        session.post('https://datadrivendiscovery.org/login', data=login_data)
+        return session
 
     def __init__(self, username, password, skip_sublevels=False):
-        self.scraper = D3MScraper(username, password, 0, skip_sublevels)
+        self.session = self.get_session(username, password)
+        self.sublevels = ['tables/'] if skip_sublevels else []
+
+
+class IPFSScraper(BaseScraper):
+    BASE_URL = 'https://gateway.ipfs.io/ipfs/QmWsbzjogZTY3Laf8SErQ9azfuY7BWicBmQjP9SxwvtqTz/'
+
+
+class BaseManager(object):
+
+    def __init__(self, source='D3M', username=None, password=None, skip_sublevels=False):
+        self.scraper = D3MScraper(username, password, skip_sublevels)
+        self.scraper = IPFSScraper(skip_sublevels)
 
     def load(self, dataset_name, raw='to_be_ignored'):
         return self.scraper.scrape_dataset(dataset_name)
 
     def datasets(self):
         datasets = []
-        for dataset_type in self.scraper.base_urls.keys():
+        for dataset_type in self.scraper.PATH.keys():
             datasets.extend(self.scraper.get_datasets(dataset_type))
 
         return list(sorted(datasets))
 
     def exists(self, dataset_name):
         return dataset_name in self.datasets()
+
+
+class D3MManager(BaseManager):
+
+    def __init__(self, username, password, skip_sublevels=False):
+        self.scraper = D3MScraper(username, password, skip_sublevels)
+
+
+class IPFSManager(BaseManager):
+
+    def __init__(self, skip_sublevels=False):
+        self.scraper = IPFSScraper(skip_sublevels)

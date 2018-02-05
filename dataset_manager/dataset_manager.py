@@ -1,3 +1,4 @@
+import gc
 import os
 from getpass import getpass
 
@@ -24,8 +25,14 @@ def get_input_manager(args):
 
         return d3m.D3MManager(username, password, skip_sublevels=args.skip_sublevels)
 
+    elif args.input.startswith('ipfs'):
+        return d3m.IPFSManager(skip_sublevels=args.skip_sublevels)
+
     elif args.input.startswith('s3:'):
-        return s3.S3Manager(args.input[3:], args.skip_sublevels)
+        input_args = args.input[3:].split(':')
+        bucket = input_args[0]
+        folder = input_args[1] if len(input_args) > 1 else 'datasets'
+        return s3.S3Manager(args.input[3:], folder, skip_sublevels=args.skip_sublevels)
 
     elif os.path.isdir(args.input):
         return local.LocalManager(args.input, args.skip_sublevels)
@@ -65,7 +72,7 @@ if __name__ == '__main__':
 
     # Output
     output_or_list = parser.add_mutually_exclusive_group()
-    output_or_list.add_argument('-o', '--output', help='Local folder or s3:bucket')
+    output_or_list.add_argument('-o', '--output', help='Local folder or s3:bucket:folder')
     output_or_list.add_argument('-l', '--list', action='store_true',
                                 help='List all datasets found in input')
 
@@ -107,5 +114,6 @@ if __name__ == '__main__':
             for dataset in datasets:
                 if args.force or not output_manager.exists(dataset):
                     process_dataset(dataset, input_manager, output_manager, args.split, args.raw)
+                    gc.collect()
                 else:
                     print("Dataset {} already exists. Use --force to overwrite.".format(dataset))

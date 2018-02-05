@@ -38,7 +38,7 @@ aws_secret_access_key = YOUR_SECRET_KEY
 
 The main script is the `download_manager.py`, which supports the following options:
 
-- **-i, --input** - D3M website, S3 bucket or local folder.
+- **-i, --input** - D3M website, IPFS, S3 bucket or local folder.
 - **-o, --output** - S3 bucket or local folder.
 - **-l, --list** - List all available datasets in the indicated input.
 - **-a, --all** - Get and process all available datasets in the indicated input.
@@ -54,7 +54,8 @@ The Input and Output options implicitely point at different locations depending 
 
 * **D3M**: `d3m:username:passsword`: password can be omitted, as well as username. Accepted only as Input.
 If omitted, the user will be asked to insert them later on.
-* **S3**: `s3:bucket-name`: The datasets will be stored in the root of the bucket.
+* **IPFS**: `ipfs`: The datasets will be downloaded using an IPFS mirror of the D3M repository.
+* **S3**: `s3:bucket-name`: The datasets will be stored inside the `datasets` folder as a `.tar.gz` archive.
 * **Local filesystem**: `local/filesystem/path`: The path must exist, otherwise it raises an error.
 
 
@@ -67,17 +68,17 @@ This will skip existing datasets.
 python dataset_manager.py -i d3m:a_username:a_password -o s3:d3m-data-dai -a
 ```
 
-Download all datasets from D3M, split them and store them in a local folder `datasets`, overwriting
+Download all datasets from the IPFS mirror, split them and store them in a local folder `datasets`, overwriting
 any existing data.
 This will prompt the user for the d3m password.
 
 ```
-python dataset_manager.py -i d3m:a_username -o datasets -a -s -f
+python dataset_manager.py -i ipfs -o datasets -a -s -f
 ```
 
-Download the datasets `185_baseball` and `32_wikiqa` from S3 bucket `d3m-data-dai`
+Download the datasets `185_baseball` and `32_wikiqa` from S3 bucket `bucket-name`
 into local folder `data/datasets`. Overwrite the existing data.
 
 ```
-python dataset_manager.py -i s3:d3m-data-dai -o data/datasets -f 185_baseball 32_wikiqa
+python dataset_manager.py -i s3:bucket-name -o data/datasets -f 185_baseball 32_wikiqa
 ```
