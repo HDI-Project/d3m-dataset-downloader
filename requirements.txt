@@ -1,2 +1,4 @@
-requests
-bs4
+bs4==0.0.1
+pandas==0.22.0
+requests==2.18.4
+boto3==1.5.22
